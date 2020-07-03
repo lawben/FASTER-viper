@@ -95,11 +95,14 @@ class FasterKv {
   typedef AsyncPendingRmwContext<key_t> async_pending_rmw_context_t;
   typedef AsyncPendingDeleteContext<key_t> async_pending_delete_context_t;
 
+  FasterKv(uint64_t table_size, uint64_t log_size, const std::string& filename, bool use_nvm)
+    : FasterKv(table_size, log_size, filename, 0.9, false, use_nvm) {}
+
   FasterKv(uint64_t table_size, uint64_t log_size, const std::string& filename,
-           double log_mutable_fraction = 0.9, bool pre_allocate_log = false)
+           double log_mutable_fraction = 0.9, bool pre_allocate_log = false, bool use_nvm = false)
     : min_table_size_{ table_size }
     , disk{ filename, epoch_ }
-    , hlog{ log_size, epoch_, disk, disk.log(), log_mutable_fraction, pre_allocate_log }
+    , hlog{ log_size, epoch_, disk, disk.log(), log_mutable_fraction, pre_allocate_log, use_nvm }
     , system_state_{ Action::None, Phase::REST, 1 }
     , num_pending_ios{ 0 } {
     if(!Utility::IsPowerOfTwo(table_size)) {
@@ -553,7 +556,7 @@ inline AtomicHashBucketEntry* FasterKv<K, V, D>::FindOrCreateEntry(KeyHash hash,
 
 template <class K, class V, class D>
 template <class RC>
-inline Status FasterKv<K, V, D>::Read(RC& context, AsyncCallback callback,
+inline Status FasterKv<K, V, D>::   Read(RC& context, AsyncCallback callback,
                                       uint64_t monotonic_serial_num) {
   typedef RC read_context_t;
   typedef PendingReadContext<RC> pending_read_context_t;

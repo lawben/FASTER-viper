@@ -18,6 +18,8 @@
 #include "native_buffer_pool.h"
 #include "recovery_status.h"
 #include "status.h"
+#include <libpmemobj.h>
+#include <libpmemobj++/make_persistent_atomic.hpp>
 
 namespace FASTER {
 namespace core {
@@ -244,7 +246,7 @@ class PersistentMemoryMalloc {
   static constexpr uint32_t kNumHeadPages = 4;
 
   PersistentMemoryMalloc(uint64_t log_size, LightEpoch& epoch, disk_t& disk_, log_file_t& file_,
-                         Address start_address, double log_mutable_fraction, bool pre_allocate_log)
+                         Address start_address, double log_mutable_fraction, bool pre_allocate_log, bool use_pmem)
     : sector_size{ static_cast<uint32_t>(file_.alignment()) }
     , epoch_{ &epoch }
     , disk{ &disk_ }
@@ -261,7 +263,8 @@ class PersistentMemoryMalloc {
     , buffer_size_{ 0 }
     , pages_{ nullptr }
     , page_status_{ nullptr }
-    , pre_allocate_log_{ pre_allocate_log } {
+    , pre_allocate_log_{ pre_allocate_log }
+    , use_pmem_{ use_pmem } {
     assert(start_address.page() <= Address::kMaxPage);
 
     if(log_size % kPageSize != 0) {
@@ -285,10 +288,50 @@ class PersistentMemoryMalloc {
 
     page_status_ = new FullPageStatus[buffer_size_];
 
+    if (use_pmem_) {
+//        int sds_write_value = 0;
+//        pmemobj_ctl_set(NULL, "sds.at_create", &sds_write_value);
+//        pmem_pool_ = pmem::obj::pool<XRoot>::create(pool_file_, "", pool_size);
+//        pmemobj_ctl_set(pmem_pool_.handle(), "heap.alloc_class.222.desc", &XPage_alloc);
+
+
+        std::filesystem::remove(pool_file_);
+
+
+        pool_file_ = disk_.GetRootPath() + "nvm-faster.log";
+        pool_fd_ = ::open(pool_file_.c_str(), O_RDWR | O_CREAT);
+        if (pool_fd_ < 0) {
+            throw std::runtime_error("Cannot open pool file: " + std::string(pool_file_) + " | " + std::strerror(errno));
+        }
+
+        if (ftruncate(pool_fd_, pool_size_) != 0) {
+            throw std::runtime_error("Cannot truncate pool file: " + std::string(pool_file_) + " | " + std::strerror(errno));
+        }
+
+        const auto prot = PROT_WRITE | PROT_READ | PROT_EXEC;
+        const auto flags = MAP_SHARED | MAP_SYNC;
+        void* pmem_addr = mmap(nullptr, pool_size_, prot, flags, pool_fd_, 0);
+        if (pmem_addr == nullptr || pmem_addr == reinterpret_cast<void*>(0xffffffffffffffff)) {
+            throw std::runtime_error("Cannot mmap pool file: " + std::string{pool_file_} + " | " + std::strerror(errno));
+        }
+        pmem_addr_start_ = static_cast<char*>(pmem_addr);
+        num_allocated_pages_ = 0;
+    }
+
     pages_ = new uint8_t* [buffer_size_];
     for(uint32_t idx = 0; idx < buffer_size_; ++idx) {
       if (pre_allocate_log_) {
-        pages_[idx] = reinterpret_cast<uint8_t*>(aligned_alloc(sector_size, kPageSize));
+        if (use_pmem_) {
+            throw std::runtime_error("NVM prealloc not supported.");
+//            const pmem::obj::allocation_flag_atomic xpage_alloc_flag =
+//                pmem::obj::allocation_flag_atomic::class_id(222);
+//            pmem::obj::persistent_ptr<XPage> xp;
+//            pmem::obj::make_persistent_atomic<XPage>(pmem_pool_, xp, xpage_alloc_flag);
+//            pages_[idx] = reinterpret_cast<uint8_t*>(xp.get());
+        } else {
+            pages_[idx] = reinterpret_cast<uint8_t*>(aligned_alloc(sector_size, kPageSize));
+        }
+
         std::memset(pages_[idx], 0, kPageSize);
         // Mark the page as accessible.
         page_status_[idx].status.store(FlushStatus::Flushed, CloseStatus::Open);
@@ -303,8 +346,8 @@ class PersistentMemoryMalloc {
   }
 
   PersistentMemoryMalloc(uint64_t log_size, LightEpoch& epoch, disk_t& disk_, log_file_t& file_,
-                         double log_mutable_fraction, bool pre_allocate_log)
-    : PersistentMemoryMalloc(log_size, epoch, disk_, file_, Address{ 0 }, log_mutable_fraction, pre_allocate_log) {
+                         double log_mutable_fraction, bool pre_allocate_log, bool use_nvm)
+    : PersistentMemoryMalloc(log_size, epoch, disk_, file_, Address{ 0 }, log_mutable_fraction, pre_allocate_log, use_nvm) {
     /// Allocate the invalid page. Supports allocations aligned up to kCacheLineBytes.
     uint32_t discard;
     Allocate(Constants::kCacheLineBytes, discard);
@@ -319,13 +362,21 @@ class PersistentMemoryMalloc {
   }
 
   ~PersistentMemoryMalloc() {
-    if(pages_) {
-      for(uint32_t idx = 0; idx < buffer_size_; ++idx) {
-        if(pages_[idx]) {
-          aligned_free(pages_[idx]);
+    if (use_pmem_ && !pmem_pool_closed_) {
+//      pmem_pool_.close();
+      munmap(pmem_addr_start_, pool_size_);
+      ::close(pool_fd_);
+      std::filesystem::remove(pool_file_);
+      pmem_pool_closed_ = true;
+    }
+
+    if (!use_pmem_ && pages_) {
+        for (uint32_t idx = 0; idx < buffer_size_; ++idx) {
+            if (pages_[idx]) {
+                aligned_free(pages_[idx]);
+            }
         }
-      }
-      delete[] pages_;
+        delete[] pages_;
     }
     if(page_status_) {
       delete[] page_status_;
@@ -571,6 +622,26 @@ class PersistentMemoryMalloc {
   // Circular buffer definition
   uint8_t** pages_;
 
+  struct XRoot {};
+  struct XPage {
+//      std::array<uint64_t, 4194304> data; // 32 MiB
+      std::array<uint64_t, 4096> data;  // 32 KiB
+  };
+
+  pobj_alloc_class_desc XPage_alloc {
+      .unit_size = sizeof(XPage), .alignment = 512, .units_per_block = 1024,
+      .header_type = pobj_header_type::POBJ_HEADER_NONE, .class_id = 222
+  };
+
+  const bool use_pmem_;
+  pmem::obj::pool<XRoot> pmem_pool_;
+  char* pmem_addr_start_;
+  uint64_t num_allocated_pages_;
+  bool pmem_pool_closed_;
+  std::filesystem::path pool_file_;
+  int pool_fd_;
+  const size_t pool_size_ = 50 * (1024l * 1024 * 1024);
+
   // Array that indicates the status of each buffer page
   FullPageStatus* page_status_;
 
@@ -585,7 +656,25 @@ inline void PersistentMemoryMalloc<D>::AllocatePage(uint32_t index) {
   index = index % buffer_size_;
   if (!pre_allocate_log_) {
     assert(pages_[index] == nullptr);
-    pages_[index] = reinterpret_cast<uint8_t*>(aligned_alloc(sector_size, kPageSize));
+    if (use_pmem_) {
+//        const pmem::obj::allocation_flag_atomic xpage_alloc_flag =
+//            pmem::obj::allocation_flag_atomic::class_id(222);
+//        pmem::obj::persistent_ptr<XPage> xp;
+//        pmem::obj::make_persistent_atomic<XPage>(pmem_pool_, xp, xpage_alloc_flag);
+//        uint8_t* xpage_start = reinterpret_cast<uint8_t*>(xp.get());
+//        for (size_t i = 0; i < 1023; ++i) {
+//            pmem::obj::persistent_ptr<XPage> x;
+//            pmem::obj::make_persistent_atomic<XPage>(pmem_pool_, x, xpage_alloc_flag);
+//#ifndef NDEBUG
+//            ptrdiff_t diff = reinterpret_cast<uint8_t*>(xp.get()) - xpage_start;
+//            assert(diff < (1UL << 25) && diff % (1UL << 15) == 0);
+//#endif
+        char* new_page = pmem_addr_start_ + (num_allocated_pages_ * kPageSize);
+        num_allocated_pages_++;
+        pages_[index] = reinterpret_cast<uint8_t*>(new_page);
+    } else {
+        pages_[index] = reinterpret_cast<uint8_t*>(aligned_alloc(sector_size, kPageSize));
+    }
     std::memset(pages_[index], 0, kPageSize);
     // Mark the page as accessible.
     page_status_[index].status.store(FlushStatus::Flushed, CloseStatus::Open);

@@ -7,7 +7,7 @@ namespace FASTER {
 namespace core {
 
 /// The first thread will have index 0.
-std::atomic<uint32_t> Thread::next_index_{ 0 };
+std::atomic<uint32_t> Thread::next_index_{0 };
 
 /// No thread IDs have been used yet.
 std::atomic<bool> Thread::id_used_[kMaxNumThreads] = {};

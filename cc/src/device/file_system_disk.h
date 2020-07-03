@@ -505,6 +505,10 @@ class FileSystemDisk {
     return file_t{ root_path_ + relative_path, default_file_options_ };
   }
 
+  std::string GetRootPath() {
+      return root_path_;
+  }
+
   /// Implementation-specific accessor.
   handler_t& handler() {
     return handler_;

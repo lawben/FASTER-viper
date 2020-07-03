@@ -27,29 +27,29 @@ set_directory_properties(PROPERTIES COMPILE_DEFINITIONS_DEBUG "_DEBUG")
 ##### BEGIN GOOGLE TEST INSTALLATION #####
 # Copied from https://github.com/google/googletest/tree/master/googletest#incorporating-into-an-existing-cmake-project
 # Download and unpack googletest at configure time
-configure_file(CMakeLists.txt.in googletest-download/CMakeLists.txt)
-execute_process(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
-  RESULT_VARIABLE result
-  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/googletest-download )
-if(result)
-  message(FATAL_ERROR "CMake step for googletest failed: ${result}")
-endif()
-execute_process(COMMAND ${CMAKE_COMMAND} --build .
-  RESULT_VARIABLE result
-  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/googletest-download )
-if(result)
-  message(FATAL_ERROR "Build step for googletest failed: ${result}")
-endif()
-
-# Prevent overriding the parent project's compiler/linker
-# settings on Windows
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-
-# Add googletest directly to our build. This defines
-# the gtest and gtest_main targets.
-add_subdirectory(${CMAKE_BINARY_DIR}/googletest-src
-                 ${CMAKE_BINARY_DIR}/googletest-build
-                 EXCLUDE_FROM_ALL)
+#configure_file(CMakeLists.txt.in googletest-download/CMakeLists.txt)
+#execute_process(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
+#  RESULT_VARIABLE result
+#  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/googletest-download )
+#if(result)
+#  message(FATAL_ERROR "CMake step for googletest failed: ${result}")
+#endif()
+#execute_process(COMMAND ${CMAKE_COMMAND} --build .
+#  RESULT_VARIABLE result
+#  WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/googletest-download )
+#if(result)
+#  message(FATAL_ERROR "Build step for googletest failed: ${result}")
+#endif()
+#
+## Prevent overriding the parent project's compiler/linker
+## settings on Windows
+#set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+#
+## Add googletest directly to our build. This defines
+## the gtest and gtest_main targets.
+#add_subdirectory(${CMAKE_BINARY_DIR}/googletest-src
+#                 ${CMAKE_BINARY_DIR}/googletest-build
+#                 EXCLUDE_FROM_ALL)
 
 ##### END GOOGLE TEST INSTALLATION #####
 
@@ -90,14 +90,14 @@ ENDFUNCTION()
 
 #Function to automate building benchmark binaries
 FUNCTION(ADD_FASTER_BENCHMARK BENCHMARK_NAME)
-  add_executable(${BENCHMARK_NAME} ${BENCHMARK_HEADERS} ${BENCHMARK_NAME}.cc)
+  add_executable(${BENCHMARK_NAME} ${BENCHMARK_HEADERS} benchmark.cc)
 
   target_link_libraries(${BENCHMARK_NAME} ${FASTER_BENCHMARK_LINK_LIBS})
 ENDFUNCTION()
 
 # Build each subdirectory
 add_subdirectory(benchmark-dir)
-add_subdirectory(playground)
+#add_subdirectory(playground)
 add_subdirectory(src)
-add_subdirectory(test)
+#add_subdirectory(test)
 
