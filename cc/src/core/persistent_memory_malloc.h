@@ -657,18 +657,6 @@ inline void PersistentMemoryMalloc<D>::AllocatePage(uint32_t index) {
   if (!pre_allocate_log_) {
     assert(pages_[index] == nullptr);
     if (use_pmem_) {
-//        const pmem::obj::allocation_flag_atomic xpage_alloc_flag =
-//            pmem::obj::allocation_flag_atomic::class_id(222);
-//        pmem::obj::persistent_ptr<XPage> xp;
-//        pmem::obj::make_persistent_atomic<XPage>(pmem_pool_, xp, xpage_alloc_flag);
-//        uint8_t* xpage_start = reinterpret_cast<uint8_t*>(xp.get());
-//        for (size_t i = 0; i < 1023; ++i) {
-//            pmem::obj::persistent_ptr<XPage> x;
-//            pmem::obj::make_persistent_atomic<XPage>(pmem_pool_, x, xpage_alloc_flag);
-//#ifndef NDEBUG
-//            ptrdiff_t diff = reinterpret_cast<uint8_t*>(xp.get()) - xpage_start;
-//            assert(diff < (1UL << 25) && diff % (1UL << 15) == 0);
-//#endif
         char* new_page = pmem_addr_start_ + (num_allocated_pages_ * kPageSize);
         num_allocated_pages_++;
         pages_[index] = reinterpret_cast<uint8_t*>(new_page);
