@@ -299,7 +299,7 @@ class PersistentMemoryMalloc {
 
 
         pool_file_ = disk_.GetRootPath() + "nvm-faster.log";
-        pool_fd_ = ::open(pool_file_.c_str(), O_RDWR | O_CREAT);
+        pool_fd_ = ::open(pool_file_.c_str(), O_RDWR | O_CREAT, 0644);
         if (pool_fd_ < 0) {
             throw std::runtime_error("Cannot open pool file: " + std::string(pool_file_) + " | " + std::strerror(errno));
         }
