@@ -60,7 +60,5 @@ set (FASTER_SOURCES ${FASTER_SOURCES}
 )
 endif()
 
-find_library(libpmemobj REQUIRED HINTS /usr/local/lib)
-
 add_library(faster STATIC ${FASTER_SOURCES} ${FASTER_HEADERS})
 target_link_libraries(faster pmem)
